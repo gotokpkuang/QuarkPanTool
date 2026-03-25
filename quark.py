@@ -35,6 +35,14 @@ class QuarkPanFileManager:
             'accept-language': 'zh-CN,zh;q=0.9',
             'cookie': self.cookies,
         }
+        # 匿名请求头（不含 cookie），用于分享链接查询类接口
+        self.anon_headers: dict[str, str] = {
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko)'
+                          ' Chrome/94.0.4606.71 Safari/537.36 Core/1.94.225.400 QQBrowser/12.2.5544.400',
+            'origin': 'https://pan.quark.cn',
+            'referer': 'https://pan.quark.cn/',
+            'accept-language': 'zh-CN,zh;q=0.9',
+        }
 
     def get_cookies(self) -> str:
         quark_login = QuarkLogin(headless=self.headless, slow_mo=self.slow_mo)
@@ -50,7 +58,8 @@ class QuarkPanFileManager:
         url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+'
         return re.findall(url_pattern, text)[0]
 
-    async def get_stoken(self, pwd_id: str, password: str = '') -> str:
+    async def get_stoken(self, pwd_id: str, password: str = '',
+                         custom_headers: dict = None) -> str:
         params = {
             'pr': 'ucpro',
             'fr': 'pc',
@@ -60,9 +69,10 @@ class QuarkPanFileManager:
         }
         api = "https://drive-pc.quark.cn/1/clouddrive/share/sharepage/token"
         data = {"pwd_id": pwd_id, "passcode": password}
+        hdrs = custom_headers if custom_headers is not None else self.headers
         async with httpx.AsyncClient() as client:
             timeout = httpx.Timeout(60.0, connect=60.0)
-            response = await client.post(api, json=data, params=params, headers=self.headers, timeout=timeout)
+            response = await client.post(api, json=data, params=params, headers=hdrs, timeout=timeout)
             json_data = response.json()
             if json_data['status'] == 200 and json_data['data']:
                 stoken = json_data["data"]["stoken"]
@@ -71,10 +81,12 @@ class QuarkPanFileManager:
                 custom_print(f"文件转存失败，{json_data['message']}")
             return stoken
 
-    async def get_detail(self, pwd_id: str, stoken: str, pdir_fid: str = '0') -> str | tuple | None:
+    async def get_detail(self, pwd_id: str, stoken: str, pdir_fid: str = '0',
+                         custom_headers: dict = None) -> str | tuple | None:
         api = "https://drive-pc.quark.cn/1/clouddrive/share/sharepage/detail"
         page = 1
         file_list: list[dict[str, Union[int, str]]] = []
+        hdrs = custom_headers if custom_headers is not None else self.headers
 
         async with httpx.AsyncClient() as client:
             while True:
@@ -94,7 +106,7 @@ class QuarkPanFileManager:
                 }
 
                 timeout = httpx.Timeout(60.0, connect=60.0)
-                response = await client.get(api, headers=self.headers, params=params, timeout=timeout)
+                response = await client.get(api, headers=hdrs, params=params, timeout=timeout)
                 json_data = response.json()
 
                 is_owner = json_data['data']['is_owner']
@@ -352,7 +364,7 @@ class QuarkPanFileManager:
         return all_files
 
     async def list_share_files_recursive(self, pwd_id: str, stoken: str, pdir_fid: str = '0',
-                                         base_path: str = '') -> list:
+                                         base_path: str = '', anonymous: bool = False) -> list:
         """
         迭代式BFS遍历分享链接中的所有文件（包含多级子目录）
 
@@ -375,8 +387,9 @@ class QuarkPanFileManager:
 
             custom_print(f"[list_share] 正在列出目录 fid={current_fid}, base_path={current_base!r}")
 
+            hdrs = self.anon_headers if anonymous else self.headers
             try:
-                result = await self.get_detail(pwd_id, stoken, current_fid)
+                result = await self.get_detail(pwd_id, stoken, current_fid, custom_headers=hdrs)
             except Exception as e:
                 custom_print(f"[list_share] get_detail 出错 fid={current_fid}: {e}", error_msg=True)
                 continue

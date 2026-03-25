@@ -439,14 +439,7 @@ def check_sharelink():
         }
     """
     try:
-        # 检查cookie
-        if not check_cookie_and_notify():
-            return jsonify({
-                'code': 0,
-                'data': {},
-                'message': 'Cookie已过期，请更新config/cookies.txt文件'
-            }), 401
-        
+        # 此接口均为匿名请求，无需检查 cookie
         # 获取请求参数
         data = request.get_json()
         if not data:
@@ -467,12 +460,14 @@ def check_sharelink():
                 'message': '缺少必需参数: sharelink'
             }), 400
         
-        # 检查分享链接
+        # 匿名检查分享链接
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         pwd_id = quark_manager.get_pwd_id(sharelink)
-        stoken = loop.run_until_complete(quark_manager.get_stoken(pwd_id, password))
+        stoken = loop.run_until_complete(
+            quark_manager.get_stoken(pwd_id, password,
+                                     custom_headers=quark_manager.anon_headers))
         
         if not stoken:
             loop.close()
@@ -484,8 +479,10 @@ def check_sharelink():
                 'message': '分享链接已失效或密码错误'
             }), 200
         
-        # 尝试获取详情
-        is_owner, data_list = loop.run_until_complete(quark_manager.get_detail(pwd_id, stoken))
+        # 匿名获取详情
+        is_owner, data_list = loop.run_until_complete(
+            quark_manager.get_detail(pwd_id, stoken,
+                                     custom_headers=quark_manager.anon_headers))
         
         loop.close()
         
@@ -546,14 +543,7 @@ def list_sharelink():
         }
     """
     try:
-        # 检查cookie
-        if not check_cookie_and_notify():
-            return jsonify({
-                'code': 0,
-                'data': {},
-                'message': 'Cookie已过期，请更新config/cookies.txt文件'
-            }), 401
-        
+        # 此接口均为匿名请求，无需检查 cookie
         # 获取请求参数
         data = request.get_json()
         if not data:
@@ -574,12 +564,14 @@ def list_sharelink():
                 'message': '缺少必需参数: sharelink'
             }), 400
         
-        # 获取分享链接内容
+        # 匿名获取分享链接内容
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         pwd_id = quark_manager.get_pwd_id(sharelink)
-        stoken = loop.run_until_complete(quark_manager.get_stoken(pwd_id, password))
+        stoken = loop.run_until_complete(
+            quark_manager.get_stoken(pwd_id, password,
+                                     custom_headers=quark_manager.anon_headers))
         
         if not stoken:
             loop.close()
@@ -589,9 +581,9 @@ def list_sharelink():
                 'message': '分享链接已失效或密码错误'
             }), 400
         
-        # 递归获取所有文件（包括子目录）
+        # 匿名递归获取所有文件（包括子目录）
         all_files = loop.run_until_complete(
-            quark_manager.list_share_files_recursive(pwd_id, stoken, '0', '')
+            quark_manager.list_share_files_recursive(pwd_id, stoken, '0', '', anonymous=True)
         )
         
         loop.close()
