@@ -114,9 +114,12 @@ class QuarkPanFileManager:
                         "file_type": file["file_type"],
                         "dir": file["dir"],
                         "pdir_fid": file["pdir_fid"],
+                        "size": file.get("size", 0),
                         "include_items": file.get("include_items", ''),
                         "share_fid_token": file["share_fid_token"],
-                        "status": file["status"]
+                        "status": file["status"],
+                        "updated_at": file.get("updated_at", 0),
+                        "created_at": file.get("created_at", 0),
                     }
                     file_list.append(d)
                 if _total <= _size or _count < _size:
@@ -348,52 +351,77 @@ class QuarkPanFileManager:
         
         return all_files
 
-    async def list_share_files_recursive(self, pwd_id: str, stoken: str, pdir_fid: str = '0', 
-                                        base_path: str = '') -> list:
+    async def list_share_files_recursive(self, pwd_id: str, stoken: str, pdir_fid: str = '0',
+                                         base_path: str = '') -> list:
         """
-        递归列出分享链接中的所有文件
-        
+        迭代式BFS遍历分享链接中的所有文件（包含多级子目录）
+
         Args:
             pwd_id: 分享ID
             stoken: 分享token
-            pdir_fid: 父目录ID
-            base_path: 基础路径，用于构建相对路径
-            
+            pdir_fid: 起始父目录ID（'0' 表示根）
+            base_path: 对应 pdir_fid 的路径前缀
+
         Returns:
-            list: 文件信息列表
+            list: 文件信息列表，每个元素包含 name, size, is_dir, relative_path 等字段
         """
         all_files = []
-        
-        # 获取当前目录的文件列表
-        is_owner, file_list = await self.get_detail(pwd_id, stoken, pdir_fid)
-        
-        if not file_list:
-            return all_files
-        
-        for item in file_list:
-            # 构建相对路径
-            relative_path = f"{base_path}/{item['file_name']}" if base_path else f"/{item['file_name']}"
-            
-            file_info = {
-                'name': item.get('file_name', ''),
-                'size': item.get('size', 0),
-                'is_dir': item.get('dir', False),
-                'relative_path': relative_path,
-                'fid': item.get('fid', ''),
-                'file_type': item.get('file_type', ''),
-                'share_fid_token': item.get('share_fid_token', '')
-            }
-            
-            # 打印文件信息供调试
-            custom_print(f"分享文件信息: {file_info}")
-            
-            all_files.append(file_info)
-            
-            # 如果是目录，递归获取子目录内容
-            if item.get('dir'):
-                sub_files = await self.list_share_files_recursive(pwd_id, stoken, item['fid'], relative_path)
-                all_files.extend(sub_files)
-        
+
+        # BFS 队列：(目录fid, 该目录对应的相对路径前缀)
+        queue = [(pdir_fid, base_path)]
+
+        while queue:
+            current_fid, current_base = queue.pop(0)
+
+            custom_print(f"[list_share] 正在列出目录 fid={current_fid}, base_path={current_base!r}")
+
+            try:
+                result = await self.get_detail(pwd_id, stoken, current_fid)
+            except Exception as e:
+                custom_print(f"[list_share] get_detail 出错 fid={current_fid}: {e}", error_msg=True)
+                continue
+
+            if result is None:
+                custom_print(f"[list_share] get_detail 返回 None, fid={current_fid}", error_msg=True)
+                continue
+
+            is_owner, file_list = result
+
+            if not file_list:
+                custom_print(f"[list_share] 目录为空 fid={current_fid}")
+                continue
+
+            custom_print(f"[list_share] 获取到 {len(file_list)} 个条目, fid={current_fid}")
+
+            for item in file_list:
+                file_name = item.get('file_name', '')
+                relative_path = f"{current_base}/{file_name}" if current_base else f"/{file_name}"
+                is_dir = bool(item.get('dir', False))
+
+                # 打印完整字段便于调试
+                custom_print(f"[list_share] 条目字段: {item}")
+
+                file_info = {
+                    'name': file_name,
+                    'size': item.get('size', 0),
+                    'is_dir': is_dir,
+                    'relative_path': relative_path,
+                    'fid': item.get('fid', ''),
+                    'pdir_fid': item.get('pdir_fid', ''),
+                    'file_type': item.get('file_type', ''),
+                    'include_items': item.get('include_items', ''),
+                    'share_fid_token': item.get('share_fid_token', ''),
+                    'status': item.get('status', ''),
+                    'updated_at': item.get('updated_at', 0),
+                    'created_at': item.get('created_at', 0),
+                }
+
+                all_files.append(file_info)
+
+                # 如果是目录，将其加入队列继续遍历
+                if is_dir:
+                    queue.append((item['fid'], relative_path))
+
         return all_files
 
 

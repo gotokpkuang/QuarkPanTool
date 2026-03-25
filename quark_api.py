@@ -612,18 +612,18 @@ def list_sharelink():
                 'size_formatted': format_file_size(file_info['size']),
                 'is_dir': file_info['is_dir'],
                 'relative_path': file_info['relative_path'],
-                'file_type': file_info.get('file_type', '')
+                'file_type': file_info.get('file_type', ''),
+                'fid': file_info.get('fid', ''),
+                'pdir_fid': file_info.get('pdir_fid', ''),
+                'updated_at': file_info.get('updated_at', 0),
+                'created_at': file_info.get('created_at', 0),
             }
-            
-            # 如果是文件夹，可以添加item_count（如果API返回了的话）
+
+            # 如果是文件夹，使用 API 返回的 include_items 作为目录内容数量
             if formatted_file['is_dir']:
-                # 计算该目录下的直接子项数量
-                dir_path = file_info['relative_path']
-                child_count = sum(1 for f in all_files 
-                                 if f['relative_path'].startswith(dir_path + '/') 
-                                 and f['relative_path'].count('/') == dir_path.count('/') + 1)
-                formatted_file['item_count'] = child_count
-            
+                include_items = file_info.get('include_items', '')
+                formatted_file['item_count'] = int(include_items) if str(include_items).isdigit() else 0
+
             formatted_files.append(formatted_file)
         
         # 统计文件和文件夹数量
