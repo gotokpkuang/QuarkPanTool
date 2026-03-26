@@ -659,10 +659,21 @@ def list_sharelink():
                 'created_at': file_info.get('created_at', 0),
             }
 
-            # 如果是文件夹，使用 API 返回的 include_items 作为目录内容数量
-            if formatted_file['is_dir']:
+            if file_info['is_dir']:
+                # 目录：加入 item_count
                 include_items = file_info.get('include_items', '')
                 formatted_file['item_count'] = int(include_items) if str(include_items).isdigit() else 0
+            else:
+                # 文件：加入完整路径
+                formatted_file['fullpath'] = file_info['relative_path']
+                # 视频文件：加入视频专属信息
+                if file_info.get('obj_category') == 'video':
+                    formatted_file['video_max_resolution'] = file_info.get('video_max_resolution', '')
+                    formatted_file['video_width'] = file_info.get('video_width', 0)
+                    formatted_file['video_height'] = file_info.get('video_height', 0)
+                    formatted_file['fps'] = file_info.get('fps', 0)
+                    formatted_file['duration'] = file_info.get('duration', 0)
+                    formatted_file['format_type'] = file_info.get('format_type', '')
 
             formatted_files.append(formatted_file)
         

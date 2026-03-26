@@ -132,6 +132,14 @@ class QuarkPanFileManager:
                         "status": file["status"],
                         "updated_at": file.get("updated_at", 0),
                         "created_at": file.get("created_at", 0),
+                        # 分类与视频信息（非视频文件这些字段不存在，默认为空/0）
+                        "obj_category": file.get("obj_category", ""),
+                        "format_type": file.get("format_type", ""),
+                        "video_max_resolution": file.get("video_max_resolution", ""),
+                        "video_width": file.get("video_width", 0),
+                        "video_height": file.get("video_height", 0),
+                        "fps": file.get("fps", 0),
+                        "duration": file.get("duration", 0),
                     }
                     file_list.append(d)
                 if _total <= _size or _count < _size:
@@ -427,6 +435,13 @@ class QuarkPanFileManager:
                     'status': item.get('status', ''),
                     'updated_at': item.get('updated_at', 0),
                     'created_at': item.get('created_at', 0),
+                    'obj_category': item.get('obj_category', ''),
+                    'format_type': item.get('format_type', ''),
+                    'video_max_resolution': item.get('video_max_resolution', ''),
+                    'video_width': item.get('video_width', 0),
+                    'video_height': item.get('video_height', 0),
+                    'fps': item.get('fps', 0),
+                    'duration': item.get('duration', 0),
                 }
 
                 all_files.append(file_info)
