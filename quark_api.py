@@ -4,8 +4,11 @@ QuarkPanTool API Server
 """
 
 import sys
+import os
 import argparse
 import asyncio
+import logging
+import logging.handlers
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from quark import QuarkPanFileManager
@@ -17,56 +20,101 @@ from utils import custom_print
 app = Flask(__name__)
 CORS(app)  # 允许跨域请求
 
+# ── 日志配置 ──────────────────────────────────────────────────────────────────
+os.makedirs('logs', exist_ok=True)
+logger = logging.getLogger('quark_api')
+logger.setLevel(logging.DEBUG)
+_fmt = logging.Formatter('[%(asctime)s] %(levelname)s %(message)s',
+                         datefmt='%Y-%m-%d %H:%M:%S')
+# 滚动文件：单文件 10 MB，最多保留 5 个
+_fh = logging.handlers.RotatingFileHandler(
+    'logs/api.log', maxBytes=10 * 1024 * 1024, backupCount=5, encoding='utf-8')
+_fh.setFormatter(_fmt)
+_sh = logging.StreamHandler(sys.stdout)
+_sh.setFormatter(_fmt)
+logger.addHandler(_fh)
+logger.addHandler(_sh)
+# 屏蔽 werkzeug 的默认请求行（避免重复）
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
 # 全局QuarkPanFileManager实例
 quark_manager = None
 cookie_expired_notified = False  # 防止重复发送邮件
+
+
+# ── 请求日志钩子 ─────────────────────────────────────────────────────────────
+@app.before_request
+def _log_request():
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    body = ''
+    if request.is_json:
+        try:
+            body = request.get_json(silent=True) or {}
+            # 隐藏密码明文
+            if isinstance(body, dict) and 'password' in body and body['password']:
+                body = {**body, 'password': '***'}
+        except Exception:
+            body = '<parse error>'
+    logger.info('REQUEST  %s %s  client=%s  body=%s',
+                request.method, request.path, client_ip, body)
+
+
+# ── 统一响应日志助手 ──────────────────────────────────────────────────────────
+def log_resp(code: int, data: dict, message: str, http_status: int = 200):
+    """记录响应摘要并返回 Flask Response 对象"""
+    level = logging.INFO if code == 1 else logging.WARNING
+    logger.log(level, 'RESPONSE code=%d  message=%s  http=%d', code, message, http_status)
+    return jsonify({'code': code, 'data': data, 'message': message}), http_status
 
 
 def init_quark_manager():
     """初始化QuarkPanFileManager实例"""
     global quark_manager
     try:
-        # API模式下只能通过cookies.txt登录
+        logger.info('正在初始化 QuarkPanFileManager ...')
         quark_manager = QuarkPanFileManager(headless=True, slow_mo=0)
+        logger.info('QuarkPanFileManager 初始化成功')
         return True
     except Exception as e:
-        print(f"初始化QuarkPanFileManager失败: {e}")
+        logger.exception('QuarkPanFileManager 初始化失败: %s', e)
         return False
 
 
 def check_cookie_and_notify():
     """
     检查cookie是否有效，如果无效则发送邮件通知
-    
+
     Returns:
         bool: cookie是否有效
     """
     global cookie_expired_notified
-    
+
     try:
-        # 尝试获取用户信息来验证cookie
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         user_info = loop.run_until_complete(quark_manager.get_user_info())
         loop.close()
-        
+
         if user_info:
-            # Cookie有效，重置通知标志
             cookie_expired_notified = False
+            logger.debug('Cookie 验证通过，当前用户: %s', user_info)
             return True
         else:
-            # Cookie无效
+            logger.warning('Cookie 已失效')
             if not cookie_expired_notified:
-                # 发送邮件通知
-                success, message = send_cookie_expiration_alert()
-                if success:
-                    print(f"Cookie过期通知已发送: {message}")
-                else:
-                    print(f"Cookie过期通知发送失败: {message}")
+                logger.info('正在发送 Cookie 过期邮件通知 ...')
+                try:
+                    success, msg = send_cookie_expiration_alert()
+                    if success:
+                        logger.info('Cookie 过期邮件已发送: %s', msg)
+                    else:
+                        logger.error('Cookie 过期邮件发送失败: %s', msg)
+                except Exception as mail_err:
+                    logger.exception('发送过期邮件时抛出异常: %s', mail_err)
                 cookie_expired_notified = True
             return False
     except Exception as e:
-        print(f"检查cookie时出错: {e}")
+        logger.exception('检查 Cookie 时出错: %s', e)
         return False
 
 
